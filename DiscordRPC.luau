@@ -1,3 +1,5 @@
+--Put this script in ServerScriptService in any Roblox Place, publish it as Roblox Local Plugin!
+
 local HttpService = game:GetService("HttpService")
 local Selection = game:GetService("Selection")
 local ScriptEditorService = game:GetService("ScriptEditorService")
@@ -20,7 +22,6 @@ local function sendUpdate(details, state)
 	end)
 end
 
--- Helper to find which service (Workspace, StarterGui, etc.) a script belongs to
 local function getTopService(obj)
 	local current = obj
 	while current and current.Parent ~= game do
@@ -39,7 +40,6 @@ local function getGameContext()
 	end
 end
 
--- 1. Real-time Script Tracking (Differentiates Script types and exact Location)
 ScriptEditorService.TextDocumentDidOpen:Connect(function(document)
 	local scriptObj = document:GetScript()
 	if scriptObj then
@@ -54,8 +54,6 @@ ScriptEditorService.TextDocumentDidOpen:Connect(function(document)
 		sendUpdate(currentDetails, getGameContext())
 	end
 end)
-
--- 2. Real-time Building / Selection Context
 Selection.SelectionChanged:Connect(function()
 	local selected = Selection:Get()
 	if #selected > 0 then
@@ -72,8 +70,6 @@ Selection.SelectionChanged:Connect(function()
 	end
 	sendUpdate(currentDetails, getGameContext())
 end)
-
--- 3. Solid Keep-Alive loop using valid API calls
 task.spawn(function()
 	while true do
 		local openDocs = ScriptEditorService:GetScriptDocuments()
