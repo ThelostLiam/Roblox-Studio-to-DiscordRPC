@@ -1,0 +1,13 @@
+How to setup "RobloxStudio to DiscordRPC"
+
+1. Go to https://create.roblox.com/store/asset/135394870049325/Studio-Status-Syncer
+2. Install the plugin to the studio, it wont appear on the "plugin" tab in your studio, dont worry! Its installed and runs on Roblox Studio by default
+3. Go to https://create.roblox.com/store/asset/135394870049325/Studio-Status-Syncer
+4. Download the ZIP file
+5. Unzip the Downloaded ZIP and run the RobloxStudio to DiscordRPC.exe
+6. Make sure to keep Discord and Roblox Studio opened in the background
+7. Once the program communicates with the Roblox's plugin you just installed, the CMD will disapper and can be opened from the hidden icons at the taskbar.
+8. Enjoy and flex!
+
+Roblox Plugin: https://create.roblox.com/store/asset/135394870049325/Studio-Status-Syncer
+Github App (Releases): https://create.roblox.com/store/asset/135394870049325/Studio-Status-Syncer
