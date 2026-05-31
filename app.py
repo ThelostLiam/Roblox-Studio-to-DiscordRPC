@@ -1,19 +1,24 @@
 import os
 import sys
 import time
+import json
+import threading
+import subprocess
+import urllib.request
 import psutil
 from pypresence import Presence, DiscordNotFound, InvalidID
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import json
-import threading
 
-# Windows GUI Control APIs
+# Windows Native GUI & Image Processing Imports
 import ctypes
 from PIL import Image, ImageDraw
 import pystray
 
-CLIENT_ID = "1087767029236383846"  # Replace with your actual Client ID
+CURRENT_VERSION = "v1.0.1"
+CLIENT_ID = "1087767029236383846"
+REPO_URI = "ThelostLiam/Roblox-Studio-to-DiscordRPC"
 
+# Windows Native Handle Initializations
 kernel32 = ctypes.WinDLL('kernel32')
 user32 = ctypes.WinDLL('user32')
 hWnd = kernel32.GetConsoleWindow()
@@ -27,13 +32,14 @@ class StudioRPCManager:
         self.last_state = {"details": "", "state": ""}
         self.last_plugin_heartbeat = 0
         self.console_visible = True
+        self.is_afk = False
 
     def toggle_console(self, icon=None, item=None):
         if self.console_visible:
-            user32.ShowWindow(hWnd, 0) # Hide
+            user32.ShowWindow(hWnd, 0)
             self.console_visible = False
         else:
-            user32.ShowWindow(hWnd, 5) # Show
+            user32.ShowWindow(hWnd, 5)
             self.console_visible = True
 
     def disable_console_close_button(self):
@@ -43,12 +49,11 @@ class StudioRPCManager:
                 user32.EnableMenuItem(hMenu, 0xF060, 1 | 2)
 
     def is_studio_running(self):
-        """Lightweight check for Studio process execution."""
         try:
-            for proc in psutil.process_iter():
-                if proc.name() == 'RobloxStudioBeta.exe':
+            for proc in psutil.process_iter(['name']):
+                if proc.info['name'] == 'RobloxStudioBeta.exe':
                     return True
-        except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+        except Exception:
             pass
         return False
 
@@ -59,7 +64,8 @@ class StudioRPCManager:
             self.is_connected = True
             self.start_time = int(time.time())
             return True
-        except (DiscordNotFound, InvalidID, ConnectionRefusedError, Exception):
+        except Exception as e:
+            print(f"[ERROR] Connection handshake failed: {type(e).__name__}")
             self.is_connected = False
             self.rpc = None
             return False
@@ -67,13 +73,15 @@ class StudioRPCManager:
     def force_reconnect(self, icon=None, item=None):
         print("\n[RPC] Manually re-indexing active pipelines...")
         if self.rpc:
-            try: self.rpc.clear()
-            except: pass
+            try: 
+                self.rpc.clear()
+            except Exception: 
+                pass
         self.is_connected = False
         if self.connect_rpc():
-            print("[RPC] Successfully reconnected to Discord!")
+            print("[SUCCESS] Reconnected to Discord system pipes successfully!")
         else:
-            print("[RPC] Failed to find Discord Client during manual reset.")
+            print("[ERROR] Failed to locate Discord Client process during manual override reset.")
 
     def update_presence(self, details, state):
         if not self.is_connected and not self.connect_rpc():
@@ -87,15 +95,18 @@ class StudioRPCManager:
                     state=state,
                     start=self.start_time,
                     large_image="studio_logo",
-                    large_text="Roblox Studio"
+                    large_text="Roblox Studio Sync"
                 )
                 print(f"[LIVE UPDATE] {details} | {state}")
-            except:
+            except Exception as e:
+                print(f"[ERROR] Discord connection snapped: {e}")
                 self.is_connected = False
 
     def monitor_lifecycle(self):
         while True:
             studio_active = self.is_studio_running()
+            current_time = time.time()
+
             if not studio_active:
                 if self.is_connected:
                     if self.rpc:
@@ -105,8 +116,15 @@ class StudioRPCManager:
                     self.start_time = None
                     self.last_state = {"details": "", "state": ""}
             else:
-                if time.time() - self.last_plugin_heartbeat > 15:
-                    self.update_presence("Browsing Projects", "Home Screen")
+                # Smart AFK Engine (120-second timeout tracking)
+                if current_time - self.last_plugin_heartbeat > 120:
+                    if not self.is_afk:
+                        print("[SYSTEM] Idle state triggered. Shifting profile to AFK...")
+                        self.is_afk = True
+                    self.update_presence("Idling", "Away From Keyboard")
+                else:
+                    self.is_afk = False
+
             time.sleep(5)
 
 manager = StudioRPCManager(CLIENT_ID)
@@ -123,20 +141,69 @@ class RequestHandler(BaseHTTPRequestHandler):
             
             self.send_response(200)
             self.end_headers()
-    def log_message(self, format, *args): return
+        else:
+            self.send_response(404)
+            self.end_headers()
+            
+    def log_message(self, format, *args): 
+        pass
+
+def run_auto_updater():
+    print("Checking for newest software definitions on GitHub...")
+    url = f"https://api.github.com/repos/{REPO_URI}/releases/latest"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode())
+                latest_tag = data.get("tag_name", CURRENT_VERSION)
+                
+                if latest_tag != CURRENT_VERSION:
+                    print(f"\n📢 New version detected: {latest_tag} (Current: {CURRENT_VERSION})")
+                    download_url = None
+                    for asset in data.get("assets", []):
+                        if asset.get("name", "").endswith(".exe"):
+                            download_url = asset.get("browser_download_url")
+                            break
+                    
+                    if download_url:
+                        print("⚡ Pulling deployment binary from GitHub CDN mirrors...")
+                        new_filename = f"Studio_Status_Syncer_{latest_tag}.exe"
+                        
+                        update_req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(update_req) as download_stream:
+                            with open(new_filename, 'wb') as out_file:
+                                out_file.write(download_stream.read())
+                        
+                        print(f"✅ Update downloaded successfully: {new_filename}")
+                        print("🚀 Launching new version and hot-swapping process pointers...")
+                        time.sleep(2)
+                        
+                        subprocess.Popen([new_filename], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                        if manager.rpc:
+                            try: manager.rpc.clear()
+                            except: pass
+                        os._exit(0)
+                    else:
+                        print("⚠️ Update found, but no direct executable file asset was listed in the GitHub release layout map.")
+                else:
+                    print(f"[SUCCESS] App version matches stable branch release ({CURRENT_VERSION})")
+    except Exception as e:
+        print(f"[NOTICE] Update server connectivity check bypassed or rate-limited: {e}")
 
 def start_server():
     try:
         server = HTTPServer(('127.0.0.1', 3000), RequestHandler)
         server.serve_forever()
     except Exception as e:
-        print(f"\n[CRITICAL ERROR] Internal server port 3000 failed: {e}")
+        print(f"\n[CRITICAL ERROR] Internal server socket port 3000 failed to bind: {e}")
 
 def create_tray_image():
     image = Image.new('RGB', (64, 64), color=(45, 45, 45))
     d = ImageDraw.Draw(image)
-    d.rectangle([(16, 16), (48, 48)], fill=(255, 115, 0))
-    d.rectangle([(24, 24), (40, 40)], fill=(0, 162, 255))
+    d.rectangle([(16, 16), (48, 48)], fill=(0, 162, 255))
+    d.rectangle([(24, 24), (40, 40)], fill=(255, 115, 0))
     return image
 
 def exit_action(icon, item):
@@ -148,75 +215,50 @@ def exit_action(icon, item):
 
 def run_diagnostic_checklist():
     print("==================================================")
-    print("      Roblox Studio Discord Presence Bootloader   ")
+    print(f"      Studio Status Syncer Bootloader ({CURRENT_VERSION})  ")
     print("==================================================")
     
-    # 1. Check for Discord in absolute isolation (Instant)
-    print("Looking for Discord Client...")
+    run_auto_updater()
+    print("--------------------------------------------------")
     
+    print("Looking for Discord Client...")
     if not manager.connect_rpc():
-        print("\n[ERROR] Failed to find Discord Client, please restart the program to try again!")
-        print("👉 Make sure your Discord Desktop app is open and running in the background.")
-        print("\n[STATUS] App will remain open in error mode. Do not close.")
+        print("\n[ERROR] Failed to locate or establish handshakes with active Discord Client system pipelines!")
+        print("👉 Verification steps: Ensure Discord Desktop app is fully loaded and running in the background.")
         return False
         
     print("[SUCCESS] Discord Client found and synced!")
     print("--------------------------------------------------")
     
-    # 2. Check for Roblox Studio
     print("Looking for Roblox Studio...")
-    
     if not manager.is_studio_running():
-        print("[INFO] Roblox Studio is not running yet.")
-        print("👉 The app will hide and monitor your PC. Presence will load the second you open Studio!")
+        print("[INFO] Roblox Studio is not running yet. Monitoring system processes silently...")
     else:
         print("[SUCCESS] Roblox Studio process detected!")
-        print("--------------------------------------------------")
-        # 3. Check for the Roblox Lua Plugin data stream
-        print("Checking for Roblox Studio Plugin heartbeat...")
-        print("(Please open a script or select an item in Studio to generate data...)")
         
-        plugin_found = False
-        for _ in range(4):
-            if time.time() - manager.last_plugin_heartbeat < 3:
-                plugin_found = True
-                break
-            time.sleep(1)
-            
-        if not plugin_found:
-            print("\n⚠️  WARNING: Could not detect your Roblox Studio Lua Plugin!")
-            print("👉 Error: No data received on local port 3000.")
-            print("👉 Fix: Save the script as a Local Plugin in Studio and allow HTTP Requests.")
-        else:
-            print("[SUCCESS] Roblox Studio Plugin connected successfully!")
-        
-    print("\n[SYSTEM] All initial checks completed.")
-    print("[SYSTEM] Minimizing console window to system tray in 5 seconds...")
-    
+    print("\n[SYSTEM] Minimizing console window to system tray in 5 seconds...")
     time.sleep(5)
+    
     user32.ShowWindow(hWnd, 0)
     manager.console_visible = False
+    manager.last_plugin_heartbeat = time.time()
     
-    # CRITICAL FIX: Background monitoring loops spin up ONLY after boot finishes!
     threading.Thread(target=manager.monitor_lifecycle, daemon=True).start()
     threading.Thread(target=start_server, daemon=True).start()
     return True
 
 def init_tray():
-    icon = pystray.Icon("RobloxStudioRPC")
+    icon = pystray.Icon("StudioStatusSyncer")
     icon.icon = create_tray_image()
-    icon.title = "Roblox Studio Discord Rich Presence"
-    
+    icon.title = f"Studio Status Syncer {CURRENT_VERSION}"
     icon.menu = pystray.Menu(
         pystray.MenuItem("Show/Hide Console Terminal", manager.toggle_console),
         pystray.MenuItem("Force Restart Connection", manager.force_reconnect),
         pystray.MenuItem("Exit Daemon", exit_action)
     )
-    
     manager.disable_console_close_button()
     threading.Thread(target=run_diagnostic_checklist, daemon=True).start()
     icon.run()
 
 if __name__ == "__main__":
-    # Main thread kicks off the application sequence cleanly
     init_tray()
